@@ -2,12 +2,14 @@ import re
 import os
 import requests
 import json
+import aiohttp
 from dotenv import load_dotenv
 
 load_dotenv()
 VT_API_KEY: str = os.getenv('VT_API_KEY')
 
 url_scanner_url = "https://www.virustotal.com/api/v3/urls"
+analysis_url = "https://www.virustotal.com/api/v3/analyses/"
 
 payload = { "url": "wikipedia.org" }
 headers = {
@@ -26,9 +28,18 @@ async def get_response(user_response: str) -> str:
 
     if urls := check_for_urls(lowered_input):
         print("In get_response: URL detected")
-        response = await requests.post(url_scanner_url, data={"url":urls[0]}, headers=headers) #Just scans first URL for now
-        return get_id_from_response(response.text)
-    return 
+
+        #Using 'aiohttp' instead of 'requests' to keep it asynchronous 
+        async with aiohttp.ClientSession() as session:
+            async with session.post(url_scanner_url, data={"url":urls[0]}, headers=headers) as response:
+                response_data = await response.json()
+                analysis_id = get_id_from_response(response_data)
+                print(analysis_id)
+                
+                async with session.get(f'{analysis_url}{analysis_id}', headers=headers) as analysis_response:
+                    analysis_result = await analysis_response.json()
+                    print(analysis_result["data"]["attributes"]["stats"])
+                    return str(analysis_result["data"]["attributes"]["stats"])
     
 def check_for_urls(input: str) -> list:
     urls = re.findall(url_regex, input)
@@ -41,7 +52,6 @@ if __name__ == "__main__":
     analysis_id = response_dict["data"]["id"]
     print("ID: " + analysis_id)
 
-def get_id_from_response(response_text: str) -> str:
-    response_dict = json.loads(response_text)
+def get_id_from_response(response_dict: dict) -> str:
     analysis_id = response_dict["data"]["id"]
     return analysis_id
